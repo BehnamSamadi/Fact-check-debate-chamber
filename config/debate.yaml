@@ -1,0 +1,15 @@
+phases:
+  - OPENING
+  - REBUTTAL
+  - EVIDENCE
+  - SYNTHESIS
+  - VERDICT
+
+defaults:
+  rounds_per_phase: 1
+  max_rounds: 5
+  response_timeout: 120
+  agents:
+    - skeptic
+    - researcher
+    - analyst

@@ -1,0 +1,31 @@
+
+[[tool.poetry.source]]
+name = "runflare-mirror"
+url = "https://repo.snapp.tech/repository/pypi-all/simple"
+priority = "primary"
+
+[project]
+name = "debate-chamber"
+version = "0.1.0"
+description = "Multi-agent LLM deliberation system for collaborative fact-checking"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.0",
+    "httpx>=0.28.0",
+    "nats-py>=2.9.0",
+    "qdrant-client>=1.12.0",
+    "openai>=1.60.0",
+    "pyyaml>=6.0",
+    "streamlit>=1.41.0",
+    "sseclient-py>=1.8.0",
+    "sse-starlette>=2.2.0",
+    "langfuse>=2.60.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+]

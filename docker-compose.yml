@@ -1,0 +1,203 @@
+version: "3.9"
+
+services:
+  nats:
+    image: nats:latest
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: ["--js"]
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  langfuse-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  langfuse-redis:
+    image: redis:7
+    command: >
+      --requirepass langfuse-redis
+      --maxmemory-policy noeviction
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "langfuse-redis", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: langfuse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user", "default", "--password", "langfuse", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  langfuse-minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345678
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  langfuse:
+    image: langfuse/langfuse:3
+    ports:
+      - "3000:3000"
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: langfuse-redis
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://default:langfuse@langfuse-clickhouse:9000
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: langfuse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: minio12345678
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      NEXTAUTH_SECRET: local-dev-secret-change-in-prod
+      SALT: local-dev-salt-change-in-prod
+      NEXTAUTH_URL: http://localhost:3000
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_LOG_LEVEL: info
+
+  orchestrator:
+    image: debate-chamber
+    command: python -m src.orchestrator.main
+    ports:
+      - "8000:8000"
+    depends_on:
+      - nats
+      - qdrant
+      - langfuse
+    env_file: .env
+    environment:
+      NATS_URL: nats://nats:4222
+      QDRANT_URL: http://qdrant:6333
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_BASE_URL: http://langfuse:3000
+
+  skeptic-agent:
+    image: debate-chamber
+    command: python -m src.agent_service
+    depends_on:
+      - nats
+      - qdrant
+      - langfuse
+    env_file: .env
+    environment:
+      AGENT_CONFIG: /app/config/agents/skeptic.yaml
+      NATS_URL: nats://nats:4222
+      QDRANT_URL: http://qdrant:6333
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_BASE_URL: http://langfuse:3000
+
+  researcher-agent:
+    image: debate-chamber
+    command: python -m src.agent_service
+    depends_on:
+      - nats
+      - qdrant
+      - langfuse
+    env_file: .env
+    environment:
+      AGENT_CONFIG: /app/config/agents/researcher.yaml
+      NATS_URL: nats://nats:4222
+      QDRANT_URL: http://qdrant:6333
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_BASE_URL: http://langfuse:3000
+
+  analyst-agent:
+    image: debate-chamber
+    command: python -m src.agent_service
+    depends_on:
+      - nats
+      - qdrant
+      - langfuse
+    env_file: .env
+    environment:
+      AGENT_CONFIG: /app/config/agents/analyst.yaml
+      NATS_URL: nats://nats:4222
+      QDRANT_URL: http://qdrant:6333
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_BASE_URL: http://langfuse:3000
+
+  ui:
+    image: debate-chamber
+    command: streamlit run ui/app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    depends_on:
+      - orchestrator
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+
+  nats-monitor:
+    image: debate-chamber
+    command: python -m src.monitor.nats_monitor
+    ports:
+      - "9090:8080"
+    depends_on:
+      - nats
+    environment:
+      NATS_URL: nats://nats:4222
+
+volumes:
+  qdrant_data:
+  langfuse_db_data:
+  langfuse_redis_data:
+  langfuse_clickhouse_data:
+  langfuse_minio_data:
